@@ -1,0 +1,14 @@
+<svg width="1000" height="300" xmlns="http://www.w3.org/2000/svg">
+ <!-- Created with Method Draw - http://github.com/duopixel/Method-Draw/ -->
+ <g>
+  <title>background</title>
+  <rect fill="#fff" id="canvas_background" height="302" width="1002" y="-1" x="-1"/>
+  <g display="none" overflow="visible" y="0" x="0" height="100%" width="100%" id="canvasGrid">
+   <rect fill="url(#gridpattern)" stroke-width="0" y="0" x="0" height="100%" width="100%"/>
+  </g>
+ </g>
+ <g>
+  <title>Layer 1</title>
+  <text style="cursor: move;" stroke="#000" transform="matrix(2.110018829904361,0,0,2.0226446730333953,-545.5802322830583,-148.49812335186954) " xml:space="preserve" text-anchor="start" font-family="'Palatino Linotype', 'Book Antiqua', Palatino, serif" font-size="26" id="svg_1" y="157.257721" x="300.194904" stroke-width="0" fill="#000000">OS: Inter-Process Communication</text>
+ </g>
+</svg>
