@@ -12,13 +12,13 @@ tags:
 
 ## 整体架构
 
-本节参考了[Hyperledger Fabric: A Distributed Operating System for Permissioned Blockchains](https://arxiv.org/abs/1801.10228)论文。
+本节参考了 [Hyperledger Fabric: A Distributed Operating System for Permissioned Blockchains](https://arxiv.org/abs/1801.10228) 论文。
 
 根据官网对于 fabric 的一些定义，不难发现 fabric 与一般的构建弹性程序的方法别无二致。比如产生交易都是想要把 ledger 复制到不同的 peer 节点上，再通过一定的验证机制来保证数据的一致性和可靠性。但其实 fabric 与**普通的构建弹性程序的方法**——SMR（state-machine replication) 还是有几点区别的：
 
 > (1) not only one, but many distributed applications run concurrently; 
 >
-> (2) applications may be deployed dynamically and by anyone;
+> (2) applications may be deployed dynamically and by anyone; 
 >
 > (3) the application code isuntrusted, potentially even malicious.
 
@@ -37,11 +37,11 @@ tags:
 5. 交易必须是确定性的，这在程序上可能很难保证。
 6. 每个智能合约运行在所有的 peer 节点上，这与保密性产生了冲突，并且拒绝把智能合约的代码传播给这个 peer 节点的子集。
 
-因此，fabric 设计了一个新的架构来实现 resiliency,flexibility,scalability,confidentiality（弹性、灵活性、可扩展性和保密性），允许使用标准编程语言写的智能合约代码在不同的节点上一致地执行。因此，fabric 自称为**为联盟链设计的操作系统**。
+因此，fabric 设计了一个新的架构来实现 resiliency, flexibility, scalability, confidentiality（弹性、灵活性、可扩展性和保密性），允许使用标准编程语言写的智能合约代码在不同的节点上一致地执行。因此，fabric 自称为**为联盟链设计的操作系统**。
 
 这种架构允许不被信任的代码分布式地在不被信任的环境中执行，被称为 execute-order-validate 范式。它将交易流程分为三个步骤，可以在系统中的不同实体上运行：
 
-1. 执行交易并检查其正确性，从而为它背书(endorse)（对应其他区块链中的“交易验证”）；
+1. 执行交易并检查其正确性，从而为它背书 (endorse)（对应其他区块链中的“交易验证”）；
 2. 通过共识协议排序这些交易，而不是根据交易语义进行排序； 
 3. 根据特定应用的信任假设进行交易验证，这也是为了防止并发带来的竞争。
 
@@ -51,6 +51,47 @@ fabric 用的被动复制也可以被称为主从备份，在分布式数据库�
 
 > In Fabric, every transaction is executed (endorsed) only by a subset of the peers, which allows for parallel execution and addresses potential non-determinism, draw-ing on “execute-verify” BFT replication
 >
-> 为什么可以解决 potential non-determinism ？
+> **为什么可以解决 potential non-determinism** ？
 
-fabric 的主动复制指的是每个单独的 peer 节点会单独执行一个具有决定性的验证步骤，交易只在这次验证达成**全序范围内的共识（total order）**时才写入账本。这使得 fabric 可以根据不同的背书策略来建立不同的信任假设。
+fabric 的主动复制指的是每个单独的 peer 节点会单独执行一个具有决定性的验证步骤，交易只在这次验证达成**全序范围内的共识** (total order) 时才写入账本。这使得 fabric 可以根据不同的背书策略来建立不同的信任假设。
+
+为了实现上述特性，fabric 设计了下面的几个模块：
+
+* 排序服务（ordering service）： 自动向每个 peer 节点发送状态的更新，并基于交易的顺序建立共识。
+* MSP（membership service provider）：将用户和加密后的身份联系起来
+* peer-to-peer gossip service：通过排序服务来减少区块的输出（可选）
+* 智能合约（smart contracts）：可以使用标准编程语言撰写，不会对账本的状态有直接的修改。每个智能合约都是运行在容器中，确保了隔离性。
+* 账本（ledger）：每个 peer 本地都维护着仅追加的区块形式的账本，相当于是最近的 key-value 存储状态的一个快照。
+
+下面详细介绍了一下之前提到的概念。
+
+### Order-Execute 架构的问题
+
+在 fabric 之前的区块链使用的都是 order-execute 架构。这意味着区块链网络先使用一个共识协议排序这些交易，所有 peer 节点再以这个相同的顺序执行这些交易。
+
+比如需要工作量证明机制的区块链的执行流程如下：
+
+1. 每个 peer 节点（即参与共识的节点）都会组成一个包含有效交易的区块（为了建立有效性，该对等体已经预先执行了这些交易）。
+2. 这个 peer 节点尝试参与工作量证明。如果是比特币的话，这个步骤就是挖矿。
+3. 如果这个节点挖到矿了，就会把自己的区块传播给其他的节点
+4. 每个收到这个区块的节点都会验证这个结果是否正确，如果正确，则会按顺序执行这个区块里的交易，从而保证了顺序一致性。
+
+**Sequential execution** 这种方式限制了区块链的吞吐量，而且吞吐量往往和延迟成反比，这意味着这一部分可能会成为区块链的性能瓶颈。分布式系统的文献中提出了许多解决方法来提升性能，比如并行执行不相关的操作。但是在区块链中，这些方法行不通。比如在推导这些操作之间的关系的时候，这可能会涉及到一些隐私性的内容，这与保密性相违背。而且，这种方法也不能解决来自不信任者的 Dos 攻击。
+
+Order-Execute 架构的另一个问题是**非确定性事务**（交易）。在活跃的 SMR（state machine replication）中，经过共识协议后的操作必须是确定性的，否则会导致不同的节点有不同的状态。在以太坊中，是通过创建一种新的编程语言来实现这个需求的。但这也意味着需要额外的学习成本，那能不能用大家熟知的编程语言呢？
+
+不幸的是，就算应用的编写者不自己写出一段具有不确定性的代码，通用编程语言的内部实现可能并不能保证结果是唯一的（即不能保证确定性），比如 Go 语言中的 map iterator。更糟糕的是，不能保证应用的编写者自己不出错，甚至是写出恶意的代码。
+
+Order-Execute 架构还要考虑的一点是**执行的保密性（Confidentiality of execution）**。许可链中很多的使用场景都要求有保密性，即限制对智能合约逻辑、交易数据或者账本状态的访问。虽然加密技术（数据加密、灵芝是证明、可验证计算）可以实现保密性，但是这样的开销相当大。
+
+幸运的是，能够将相同的状态传播给所有的 peer 就足够了，并不需要在每个 peer 上执行相同的代码。因此，执行一个智能合约的工作只需要所有 peer 的子集（这个子集是被信任的）来完成即可，他们能够为执行的结果做担保。这种设计根据区块链的信任模型把主动复制演变成了被动复制。
+
+### 现有架构的问题
+
+#### 信任模型是固定的-应当更加灵活
+
+多数许可链依赖异步的 BFT 复制协议来建立共识。这种协议是基于不超过三分之一的节点失效（超过三分之二的节点正常运行）的安全假设的（即拜占庭容错）。在这种相同的安全假设下，尽管事实上可能只需要把 BFT 限制到少数几个节点，但相同的 peer 也经常执行应用程序。在这种环境中，可能仍然不能完全满足智能合约的需求。因为智能合约可能还会考虑每个 peer 的身份，来作为信任条件的一部分。因此，一个通用的区块链应该将协议上的信任和应用上的信任解耦，形成一个更加灵活的信任模型。
+
+#### 共识协议是硬编码的-应该是可替换的
+
+没有一个协议能够适应所有的场景，不同的 BFT 协议在不同的环境下的性能有非常大的差距。BFT 共识应该是天生可重新配置的，最好是能够动态适应环境的变化。另一个重要的点是应该将协议的信任假设与特定的区块链部署场景相匹配。事实上，人们可能想用一种基于其他信任模型的协议来取代 BFT 共识，如 XFT（cross fault tolerance），或 CFT(crash fault tolerance) 协议，如 Paxos/Raft 和 ZooKeeper，甚至是一种无许可协议。
