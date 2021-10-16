@@ -95,3 +95,33 @@ Order-Execute 架构还要考虑的一点是**执行的保密性（Confidentiali
 #### 共识协议是硬编码的-应该是可替换的
 
 没有一个协议能够适应所有的场景，不同的 BFT 协议在不同的环境下的性能有非常大的差距。BFT 共识应该是天生可重新配置的，最好是能够动态适应环境的变化。另一个重要的点是应该将协议的信任假设与特定的区块链部署场景相匹配。事实上，人们可能想用一种基于其他信任模型的协议来取代 BFT 共识，如 XFT（cross fault tolerance），或 CFT(crash fault tolerance) 协议，如 Paxos/Raft 和 ZooKeeper，甚至是一种无许可协议。
+
+### 改进后的 fabric
+
+fabric 将一贯的 order-execute 两部曲修正成了 execute-order-validate 三部曲。
+
+![Figure 2: Execute-order-validate architecture of Fabric](fig2.png)
+
+简言之，fabric 中的一个分布式应用包括两部分：
+
+* 智能合约，也叫做链码。是应用的具体逻辑，在 execute 这个步骤的时候运行。链码是 fabric 分布式应用的重要部分，可能被不被信任的开发者编写。其中还包含一些特殊的链码，叫做系统链码（system chaincodes），主要负责管理区块链系统和维护变量。
+* 在 validate 步骤时，一个背书策略会被启用。背书策略本身无法被不被信任的开发者修改，通常是作为静态库的形式使用，因此唯一能做的就是通过链码来设置一些背书策略的参数。只有被指定的管理者才有权利通过系统管理函数修改背书策略。一个典型的背书策略让链码确定一组有背书权的 peer 来进行背书操作（类比许可证发布中心）。背书策略在集合上使用单调的逻辑表达，比如 "五分之三 "或"(A∧B)∨C"。自定义背书政策可以实现任意的逻辑。
+
+客户端向被背书策略指定的 peer 们发送交易，每个交易会被这些 peers 执行，并且其输出会被记录。这个步骤也叫做**背书**。执行完成后，交易就进入到了 order 的阶段，这个阶段使用了一个可插拔的共识协议来产生一个**被背书的**且**按 block 分组的**交易的全序序列。这个顺序广播给了所有的节点。
+
+**主动复制完全是对于交易的输入进行排序，而 fabric 这里是对 在 execute 步骤计算出的交易的输出加上状态依赖进行排序。然后每个 peer 在 validate 阶段根据背书策略和执行的一致性来验证状态的变化。所有的 peer 会以同样的顺序来验证这些交易，并且这个验证是确定性的。**
+
+在这个意义上，Fabric 在拜占庭模型中引入了一种全新的混合复制模式，它结合了被动复制（the pre-consensus computation of state updates）和主动复制（the post-consensus validation of execution results and state changes）。
+
+fabric 还包含了一组来自网络（network） 的节点。
+
+![Figure 3: A Fabric network with federated MSPs and runningmultiple (differently shaded and colored) chaincodes, selectively installed on peers according to policy.](fig3.png)
+
+因为 fabric 是被许可的，所以所有参与网络的节点都有一个身份，由 MSP（membership service provider）模块提供。所有在网络中的节点承担着下面三个角色中的一个：
+
+* 客户端在 execute 阶段开始时提交 transaction proposals，节点在 excute 阶段帮助协调，并且为排序阶段广播这些交易。
+* Peers 执行 transaction proposals 并且验证 transactions。所有的 peer 都维护着区块链账本，也被称为 state。并不是所有的 peer 都会执行 transaction proposals，只有其中的子集（也就是上述的背书者）会这么做。
+* 排序服务节点整体上构成了排序服务。简而言之，排序服务建立了 Fabric 中所有事务的全序，其中每个事务包含执行阶段计算的状态更新和依赖关系，以及背书者节点的加密签名。排序节点完全不知道应用程序的状态，也不参与交易的执行和验证。这种设计选择使 Fabric 中的共识尽可能地模块化，并简化了 Fabric 中共识协议的替换。
+
+Fabric 网络实际上支持不同的区块链使用同一组排序服务。这样的区块链叫做 channel，并且可能有不同的 peers 作为他的成员。通道可以用来划分区块链网络的状态，但通道之间的共识是不协调的，每个通道中的交易总顺序与其他通道是分开的（不同的）。**认为所有排序节点都是可信的**的这么一个部署可以对所有的 peer 进行一个通道访问权限控制。
+
