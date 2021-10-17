@@ -2,6 +2,7 @@
 title: "初探 Fabric 架构"
 date: 2021-10-15T16:04:56+08:00
 draft: false
+slug: fabric
 image: "method-draw-image.svg"
 description: "学习 fabric 的设计理念"
 categories:
