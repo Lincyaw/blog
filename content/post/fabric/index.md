@@ -147,9 +147,9 @@ Fabric 网络实际上支持不同的区块链使用同一组排序服务。这�
 
 每个 peer 节点都维护着账本和在持久化存储上的状态，使能了 simulation, validation 和 ledger-update 三个状态。大体上，它是由一个区块存储（block store）和一个事务管理器（peer transaction manager）组成的。
 
-**区块存储（block store）**是交易区块的持久化版本，本质上是一组仅追加的文件。区块存储同时还维护着一些用于随机访问区块、事务的索引。
+**区块存储**（block store）是交易区块的持久化版本，本质上是一组仅追加的文件。区块存储同时还维护着一些用于随机访问区块、事务的索引。
 
-**PTM（peer transaction manager）**维护着带有版本号的以 (key, value) 形式存储的最新的状态。他保存着类似于（key，value，version）这样的一个由链码存储的三元组，保存着以 key 为主键的，最新的 value。version 字段包括区块序列号和区块内的交易（存储条目）的序列号。这样的设计使得 version 是唯一的，且单调递增的。PTM 使用 LevelDB 或者 CouchDB 来实现这么一个本地 kv 存储。
+**PTM**（peer transaction manager）维护着带有版本号的以 (key, value) 形式存储的最新的状态。他保存着类似于（key，value，version）这样的一个由链码存储的三元组，保存着以 key 为主键的，最新的 value。version 字段包括区块序列号和区块内的交易（存储条目）的序列号。这样的设计使得 version 是唯一的，且单调递增的。PTM 使用 LevelDB 或者 CouchDB 来实现这么一个本地 kv 存储。
 
 在模拟过程中，PTM 为事务提供最新状态的稳定快照。PTM 在 readset 中记录了由 GetState 访问的每个条目的元组 (key, ver)，在 writeset 中记录了由 PutState 更新的每个条目 (key, val)。此外，PTM 支持范围查询，为此它计算查询结果的加密哈希值（一组（key, ver)），并将查询字符串本身和哈希值添加到 readset 中。
 
