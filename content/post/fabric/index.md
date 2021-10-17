@@ -125,3 +125,38 @@ fabric 还包含了一组来自网络（network） 的节点。
 
 Fabric 网络实际上支持不同的区块链使用同一组排序服务。这样的区块链叫做 channel，并且可能有不同的 peers 作为他的成员。通道可以用来划分区块链网络的状态，但通道之间的共识是不协调的，每个通道中的交易总顺序与其他通道是分开的（不同的）。**认为所有排序节点都是可信的**的这么一个部署可以对所有的 peer 进行一个通道访问权限控制。
 
+#### 执行
+
+![Fabric high level transaction flow](fig4.png)
+
+#### 排序
+
+#### 验证
+
+### fabric 组成元素
+
+![Components of a Fabric peer.](fig5.png)
+
+#### 成员服务（Membership Service）
+
+#### 排序服务（Ordering Service）
+
+#### Gossip 数据传播协议
+
+#### 账本（Ledger）
+
+每个 peer 节点都维护着账本和在持久化存储上的状态，使能了 simulation, validation 和 ledger-update 三个状态。大体上，它是由一个区块存储（block store）和一个事务管理器（peer transaction manager）组成的。
+
+**区块存储（block store）**是交易区块的持久化版本，本质上是一组仅追加的文件。区块存储同时还维护着一些用于随机访问区块、事务的索引。
+
+**PTM（peer transaction manager）**维护着带有版本号的以 (key, value) 形式存储的最新的状态。他保存着类似于（key，value，version）这样的一个由链码存储的三元组，保存着以 key 为主键的，最新的 value。version 字段包括区块序列号和区块内的交易（存储条目）的序列号。这样的设计使得 version 是唯一的，且单调递增的。PTM 使用 LevelDB 或者 CouchDB 来实现这么一个本地 kv 存储。
+
+在模拟过程中，PTM 为事务提供最新状态的稳定快照。PTM 在 readset 中记录了由 GetState 访问的每个条目的元组 (key, ver)，在 writeset 中记录了由 PutState 更新的每个条目 (key, val)。此外，PTM 支持范围查询，为此它计算查询结果的加密哈希值（一组（key, ver)），并将查询字符串本身和哈希值添加到 readset 中。
+
+对于交易验证环节，PTM 按顺序验证一个区块中的所有交易行为。这将检查一个交易是否与之前的任何交易（在该区块内或之前的）相冲突。对于 readset 中的任何一个键，如果 readset 中记录的版本与最新状态下的版本不同（假设所有先前的有效交易都已提交），那么 PTM 就会将该交易标记为无效。对于范围查询，PTM 重新执行查询，并将哈希值与 readset 中的哈希值进行比较，以确保不发生幻读。这种读写冲突模式导致了单拷贝序列化（one-copy serializability）。
+
+账本组件允许在更新状态时发生下面的场景。ledger 组件在收到一个新区块之后，PTM 已经进行了验证，并在区块内使用 bit mask 将交易标记为有效或无效。现在账本组件将区块写入 block store，并且刷盘，然后更新 block store 的索引。然后，PTM 会把 writeset 中所有有效交易的状态变化应用到本地的带版本号的存储。最后，他会计算并且持久化一个叫做 savepoint 的值，表示最大的已经应用到状态的区块号。savepoint 是用来在出现故障时恢复到最新状态的。
+
+#### 执行链码
+
+#### 配置和系统链码
