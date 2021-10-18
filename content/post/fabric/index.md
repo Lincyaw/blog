@@ -173,15 +173,23 @@ Fabric 网络实际上支持不同的区块链使用同一组排序服务。这�
 
 #### 验证
 
+todo
+
 ### fabric 组成元素
 
 ![Components of a Fabric peer.](fig5.png)
 
 #### 成员服务（Membership Service）
 
+todo
+
 #### 排序服务（Ordering Service）
 
+todo
+
 #### Gossip 数据传播协议
+
+todo
 
 #### 账本（Ledger）
 
@@ -199,4 +207,8 @@ Fabric 网络实际上支持不同的区块链使用同一组排序服务。这�
 
 #### 执行链码
 
+todo
+
 #### 配置和系统链码
+
+todo
