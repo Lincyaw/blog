@@ -124,19 +124,36 @@ orderers 在收到客户端发送的交易后，将 transaction ID 从 交易头
 
 ### 将世界状态数据库替换为哈希表
 
-
+世界状态数据库必须为每一个交易依次查询和更新，以保证所有对等体的一致性。 因此，以尽可能高的交易率更新该数据存储是至关重要的。我们认为，对于常见的场景，如跟踪钱包或资产的分类账，世界状态可能相对较小。 即使需要存储数十亿的key value，大多数服务器也可以轻松地将它们保存在内存中。因此，我们建议使用内存哈希表，而不是用LevelDB或者CouchDB来存储世界状态。这样，在更新世界状态时，就可以消除硬盘访问。它还消除了昂贵的数据库系统保证（即ACID属性），由于区块链本身的冗余保证，这些保证是不必要的，进一步提高了性能。但是，在非持久化的内存里存储数据比较容易出现错误（如宕机），所以，内存里的哈希表必须以持久化的存储作为辅助，在下一节详细讨论。
 
 ### 用peer集群存储区块
 
-
+根据定义，区块是不可变的。这天然地适合仅追加形式的数据存储方式。通过将数据存储与peer节点的的其余任务解耦，我们可以为区块和世界状态备份提供多种类型的数据存储，包括像Fabric目前所做的那样，在单个服务器的文件系统中存储区块和世界状态的备份（leveldb、couchdb）。为了最大化可扩展性，论文建议使用一个分布式存储集群。请注意，在这个解决方案中，每个存储服务器只包含链的一部分，这促使我们使用分布式数据处理工具，如Hadoop MapReduce或Spark。
 
 ### 将commitment和endorsement分离
 
+在 Fabric v1.2中，背书节点同样需要提交区块。endorsement 和 commitment 是两个代价相当高的操作。虽然背书集群上的并发交易处理有可能提高应用程序的性能，但在每个新节点上都需要commit区块实际上抵消了这些好处。因此，论文建议将这些角色分割开来。
 
+具体来说就是，committer peer（即非endorser）执行验证流水线，然后将验证后的区块发送给endorsers，这些endorsers只需要将这些变化写入到自己的世界状态中，不需要另外去验证了。这个步骤使我们能够释放endorser的部分组员。在这样的背书节点集群中，可以自由地横向扩容（因为commitment 和 endorsement解耦了），可以将背书节点放到专用的硬件上。
 
 ### 并行化validation
 
+区块和transaction header的验证都需要检查发送者的权限、执行的背书政策和语法验证。这些都是高度可并行化的。论文引入了完整的validation pipeline来扩展 Fabric v1.2的并发程度。
 
+具体来说，对于每个传入的区块，都分配一个goroutine来引导它通过区块验证阶段。随后，这些goroutine中的每一个都利用了Fabric 1.2中已经存在的用于交易验证的goroutine池。 因此在任何时候，多个区块和它们里面的交易都会被并行地检查是否有效。最后所有的读写集被一个的goroutine按正确的顺序进行验证。这使我们能够利用多核服务器CPU的全部潜力。
 
 ### 缓存解析后的区块
 
+Fabric使用gRPC在网络中的节点之间进行通信。 为了准备数据的传输，协议缓冲区被用来进行序列化。为了能够处理应用程序和软件的长期升级，Fabric的区块结构是高度分层的，每一层都是单独的marshaled和unmarshaled。这导致了大量的内存被分配，以将字节数组转换为数据结构。此外，Fabric v1.2没有在缓存中存储以前unmarshaled的数据，所以每当需要数据时，就必须重新进行这项工作。
+
+为了缓解这个问题，我们提出了一个未加密数据的临时缓冲区。在验证过程中，数据块被存储在缓存中，并在需要的时候按照block number进行检索。 一旦区块的任一部分被unmarshal，它就会和区块一起被存储起来以便重复利用。 论文使用了一个循环的缓冲区，这个缓冲区和 validation pipeline 一样大。每当一个区块被提交，一个新的区块就可以进入流水线，并自动覆盖已提交区块的现有缓存。 由于提交后不需要缓存，并且保证新区块只在旧区块离开流水线后到达，所以这是一个安全的操作。请注意，unmarshal只将数据添加到缓存中，而不是改变它。 因此，可以对validation  pipeline 中的所有程序进行无锁访问。 在最坏的情况下，多个程序试图访问相同的（但尚未unmarshal的）数据，并且所有程序都并行地执行unmarshal。然后，最后一个写到缓存的程序写了最终的结果，这也没啥问题。
+
+数据流图分析表明及时有了上述的优化，由于unmarshal导致的内存分配、释放依然是整个执行流程中时间占比最大的部分。如果想要进一步优化，则需要修改gRPC的调用管理、加解密计算。这两个部分超出了论文的工作范围。
+
+## 未来工作展望
+
+- Incorporating an efficient BFT consensus algorithm suchas RCanopus
+- Speeding  up  the  extraction  of  transaction  IDs  for  the orderers without unpacking the entire transaction headers
+- Replacing the existing cryptographic computation library with a more efficient one
+- Providing  further  parallelism  by  assigning  a  separate ordering and fast peer server per channel
+- Implementing  an  efficient  data  analytics  layer  using  a distributed framework such as Apache Spark
