@@ -35,7 +35,36 @@ tags:
 
 下面针对 order-validate 这两个步骤详细说明：
 
-客户端收到足够的 proposal response 后，会将 transactions 打包发送给排序服务，包含的内容如下图所示。
+客户端收到足够的 proposal response 后，会将 transactions 打包、签名然后发送给排序服务，包含的内容如下图所示。
 
 ![transaction proposal's content](pic3.png)
+
+排序服务有两个职责：
+
+1. 将这些交易排序，达成一个顺序的共识
+2. 将排序后的交易区块发送给所有的peer
+
+orderers 收到 transaction proposal 后，会进行以下几个操作：
+
+1. 检查 transaction proposal 是否被客户端授权
+2. 如果已经授权，则将这个 transaction proposal 发送给 Kafka 集群。每个Fabric Channel 都对应着一个 Kafka topic。在 Fabric v2.0后，已经建议将 raft 作为[排序服务的底层实现](https://hyperledger-fabric.readthedocs.io/zh_CN/latest/orderer/ordering_service.html)。每个通道都在 Raft 协议的**单独**实例上运行，该协议允许每个实例选择不同的领导者。
+3. 将 Kafka（raft）返回的交易序列打包成区块，并签名
+4. 将区块发送给peers。可以只发送给少数的peer，其余的通过gossip协议传播。
+
+
+
+在peer收到排序服务的消息后：
+
+1. 解析区块头和元数据，并且检查其句法结构（syntactic  structure）。
+2. 根据指定的政策验证orderers的签名。
+3. 第一步验证：
+   1. 解包区块
+   2. 检查句法
+   3. 验证背书
+   4. 若上述3个没有被通过，则标记该交易为 invalid，但仍然留在区块中
+4. 第二步验证
+   1. 确保invalid的交易不会产生一个invalid的世界状态
+   2. 确保交易的rwset中的version是相同的。如果不同，则说明之前的交易写了某个key，更新了version，从而使交易失效。这个操作防止了 double-spending的发生
+5. 第三步，peer将区块写入账本，更新世界状态。
+6. 最后，区块被加入到一个队列中，追加到当前的区块链中。
 
