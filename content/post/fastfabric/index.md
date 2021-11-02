@@ -35,4 +35,7 @@ tags:
 
 下面针对 order-validate 这两个步骤详细说明：
 
-![](fig2.png)
+客户端收到足够的 proposal response 后，会将 transactions 打包发送给排序服务，包含的内容如下图所示。
+
+![transaction proposal's content](pic3.png)
+
