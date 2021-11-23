@@ -1,7 +1,7 @@
 ---
 title: "《配环境》"
 date: 2021-10-29T21:16:28+08:00
-draft: false
+draft: true
 description: "实习日记"
 slug: huawei-life
 categories:
