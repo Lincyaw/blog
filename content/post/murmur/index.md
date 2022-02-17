@@ -2,7 +2,7 @@
 title: "寒假二三事"
 date: 2022-02-17T21:42:06+08:00
 draft: false
-image: "method-draw-image.svg"
+image: "pic.jpg"
 slug: murmuring
 categories:
     - 生活
